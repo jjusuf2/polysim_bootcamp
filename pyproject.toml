@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polysim"
+version = "0.1.0"
+description = "Polymer and loop-extrusion simulations, adapted from the polychrom examples"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    "numpy",
+    "cython",       # LEF_Dynamics.pyx is built at import time via pyximport
+    "matplotlib",   # notebooks
+]
+
+# polychrom and openmm are intentionally not listed: neither installs cleanly from PyPI
+# (openmm is a conda package). Install them into the environment first, then `pip install
+# -e .` here. Only polysim.sim3d needs them; polysim.extrusion runs without.
+
+[tool.setuptools]
+packages = ["polysim"]
+
+[tool.setuptools.package-data]
+polysim = ["*.pyx"]
