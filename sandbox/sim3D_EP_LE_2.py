@@ -14,8 +14,8 @@ region_size = 2000
 num_regions = npoly // region_size
 region_starts = np.arange(num_regions) * region_size
 
-left_probs  = {200: 0.3, 330: 0.3, 724: 0.6, 1425: 0.3, 1433: 0.3, 1604: 0.2}
-right_probs = {574: 0.2, 694: 0.9, 866: 0.6, 1241: 0.3, 1390: 0.3, 1580: 0.2, 1752: 0.4, 1800: 0.3}
+left_probs  = {200: 0.5, 330: 0.2, 724: 0.6, 1425: 0.25, 1433: 0.15, 1604: 0.2}
+right_probs = {574: 0.4, 694: 0.5, 866: 0.6, 1241: 0.05, 1390: 0.4, 1580: 0.4, 1752: 0.5, 1800: 0.1}
 
 monomer_types = np.zeros(npoly, dtype='int')
 sticky_elements = np.array([250, 372, 540, 745, 775, 833, 961, 1202, 1330, 1640, 1722])
