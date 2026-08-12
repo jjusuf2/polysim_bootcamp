@@ -18,14 +18,18 @@ You will find all the code you need to follow the bootcamp in the `tutorial` dir
     * tqdm 4.70.0
     * ipykernel 7.2.0
     * py3Dmol 2.5.5
+ 
+  put analysis softwares somewhere else
 
 If you are using a lab computer, you can do this by cloning James' conda environment exactly using the commands below. This will be much faster than creating an environment from scratch, but it might not work on other operating systems.
 ```bash
 $ conda create -n polysim -c conda-forge --file /mnt/md0/jjusuf/environments/polysim3_exact_2026aug.txt
 
-$ conda run -n polysim pip install tqdm==4.70.0 matplotlib==3.11.1 py3Dmol==2.5.5 "polychrom @ git+https://github.com/open2c/polychrom.git@4c9e3f8"
-
 $ conda activate polysim
+
+$ pip install "polychrom @ git+https://github.com/open2c/polychrom.git@4c9e3f8"
+
+$ pip install -e /mnt/md0/jjusuf/polysim/polysim_bootcamp
 ```
 
 The code here is designed to be run on the Hansen Lab computers' GPU's, which as of August 2026 are:
