@@ -21,6 +21,13 @@ Compartments are deliberately not modelled here. Instead of hard-coded A/B/C blo
 lists you pass ``monomer_types`` and ``interaction_matrix`` straight through to
 polychrom's ``heteropolymer_SSW`` if you want type-specific interactions at all; leave
 both as None (the default) for a plain homopolymer with soft repulsion.
+
+Set ``sep=None`` to turn loop extrusion off entirely and run pure polymer dynamics --
+no translocator, no LEF bonds, no ``sites.npz``/``SMC*.dat``. The block schedule is
+untouched, so a ``sep=None`` run samples on exactly the same cadence as the extrusion
+run you want to compare it against. Pair it with ``blocks_per_updater=None`` to run each
+phase as a single Simulation: the chunking only exists to bound what the bond updater
+precalculates, and with no LEFs there is nothing to precalculate.
 """
 
 import os
@@ -49,50 +56,59 @@ class SimParams:
     """
 
     # ---- polymer ------------------------------------------------------------------
-    npoly: int = 40080  # total monomers; ignored if chr_sizes is given
-    nchr: int = 1  # number of chains; ignored if chr_sizes is given
-    chr_sizes: Optional[Sequence[int]] = None  # explicit per-chain lengths
-    density: float = 0.2  # monomers per unit volume inside the confinement
+    npoly: int = 70000  # total number of monomers; ignored if chr_sizes is given
+    nchr: int = 1  # number of chromosomes (chains); ignored if chr_sizes is given
+    chr_sizes: Optional[Sequence[int]] = None  # explicit lengths of each chromosome
+    density: float = 0.3  # number of monomers per unit volume
     pbc: bool = False  # periodic box instead of spherical confinement
     confinement_k: float = 1.0  # stiffness of the spherical confinement
-    repel: float = 3.0  # nonbonded repulsion energy, kT
-    ignore_adjacent: bool = True  # skip nonbonded forces between bonded neighbours
-    bond_wiggle: float = 0.1  # backbone bond wiggle distance
-    angle_k: float = 1.5  # backbone bending stiffness
+    repel: float = 3.0  # nonbonded repulsion energy, in kT, a.k.a. "trunc"
+    ignore_adjacent: bool = True  # skip nonbonded forces between bonded neighbors, a.k.a. "except_bonds"
+    bond_wiggle: float = 0.1  # backbone bond wiggle distance, in monomer units
+    angle_k: float = 0.05  # backbone bending stiffness, in monomer units
+                           # we are making a very flexible polymer, basically not necessary here
 
     # ---- monomer types (optional; None -> homopolymer) ------------------------------
-    monomer_types: Optional[Sequence[int]] = None  # length npoly, values 0..ntypes-1
-    interaction_matrix: Optional[Sequence[Sequence[float]]] = None  # symmetric ntypes x ntypes
-    attraction_energy: float = 0.0  # background attraction for all pairs, kT
+    monomer_types: Optional[Sequence[int]] = None  # an array of types (0,1,2,...) of every monomer in the polymer (length = npoly)
+    interaction_matrix: Optional[Sequence[Sequence[float]]] = None  # matrix of attraction energies between the different types, kT
+    attraction_energy: float = 0.0  # background attraction energy between all monomers, kT
 
     # ---- loop extrusion -------------------------------------------------------------
-    life: float = 3000.0  # LEF lifetime in LEF timesteps
-    sep: float = 480.0  # monomers per LEF -> n_lefs = npoly // sep
-    vlef: float = 0.05  # p(step per leg per timestep)
-    stall: float = 0.8  # CTCF stall probability per encounter
+    # the time units here are in LEF timesteps; one block advances the LEF clock by
+    # "smc_steps_per_block" and the polymer clock by "poly_steps_per_block" (both below)
+    # set sep=None to switch extrusion off entirely; every other field in this block is then unused
+    life: float = 3000.0  # LEF lifetime
+    sep: Optional[float] = 480  # "separation", defined as # of monomers per LEF -> n_lefs = npoly // sep
+                                # None -> no LEFs at all (pure polymer dynamics)
+    vlef: float = 0.0025  # 1-sided extrusion motor velocity of LEF, in monomers per timestep
+    stall: float = 0.6  # probability that a CTCF site will stall a passing LEF
     stallall: bool = False  # stall everywhere (ignores the site lists)
-    lifebooststalled: float = 4.0  # lifetime multiplier while stalled at CTCF
-    ctcf_left: Optional[Sequence[int]] = None  # sites blocking the left-moving leg
-    ctcf_right: Optional[Sequence[int]] = None  # sites blocking the right-moving leg
-    smc_bond_wiggle: float = 0.1
+    lifebooststalled: float = 4.0  # LEF lifetime multiplier while both sides are stalled CTCFs
+    ctcf_left: Optional[Sequence[int]] = None  # array of monomers that are able to block the left-moving LEF leg (i.e., "RIGHT-facing" motifs)
+    ctcf_right: Optional[Sequence[int]] = None  # array of monomers that are able to block the right-moving LEF leg (i.e., "LEFT-facing" motifs)
+    smc_bond_wiggle: float = 0.2
     smc_bond_dist: float = 0.5
 
     # ---- integration ------------------------------------------------------------------
     platform: str = "CUDA"
-    gpu: str = "0"
+    gpu: str = "0"  # the two GPU's in each computer are called "0" and "1"; use nvidia-smi to check usage
     integrator: str = "langevin"
     dt: int = 40  # timestep, fs
-    thermostat: float = 0.01  # collision rate during production
-    thermostat0: float = 0.01  # collision rate during equilibration (>= thermostat)
-    polysteps: int = 450  # polymer timesteps per LEF timestep
+    colrate: float = 0.01   # collision rate during production
+    colrate0: float = 0.01  # collision rate during equilibration (>= colrate)
+    poly_steps_per_block: int = 450  # polymer timesteps per block
     max_ek: float = 20.0
 
     # ---- schedule ---------------------------------------------------------------------
-    numsave: int = 10000  # saved blocks
-    saveevery: int = 100  # LEF steps between saves; must divide 1000
-    initskip: int = 80  # saved blocks discarded as equilibration
-    initsteps: int = 1000000  # LEF-only steps before the polymer starts
-    blocks_per_updater: int = 1000  # bondUpdater is rebuilt this often
+    # a "block" is one iteration of the inner loop: poly_steps_per_block polymer steps and,
+    # with extrusion on, smc_steps_per_block LEF timesteps. Every saveevery-th one is written.
+    numsave: int = 5000000  # blocks written to the trajectory
+    saveevery: int = 500  # blocks between saves; must divide blocks_per_updater
+    initskip: int = 300  # blocks of equilibration, run at colrate0 and (by default) not written
+    initsteps: int = 2000000  # LEF-only steps before the polymer starts
+    blocks_per_updater: Optional[int] = 1000  # rebuild the sim (and the bondUpdater) this often;
+                                              # None -> one chunk per phase, i.e. as few rebuilds as
+                                              # the schedule allows (extrusion must be off)
     smc_steps_per_block: int = 1
 
     # ---- io -----------------------------------------------------------------------------
@@ -100,6 +116,11 @@ class SimParams:
     flag: str = ""  # label appended to the output folder name
     restart_file: str = ""  # path to a pickled conformation to restart from
     save_smc_bonds: bool = True  # dump SMC*.dat + bondsAdded.txt alongside the trajectory
+    save_equilibration: bool = False  # also write the initskip equilibration blocks. Off by default
+                                      # so that every block on disk is production: nothing to drop,
+                                      # and no need to know the resolved initskip at analysis time.
+                                      # They are still integrated and still logged (Rg, energies,
+                                      # blow-up checks) -- only the reporter call is skipped.
 
     def __post_init__(self):
         if self.chr_sizes is None:
@@ -114,11 +135,21 @@ class SimParams:
 
         if min(self.chr_sizes) < 2:
             raise ValueError("every chain needs at least 2 monomers, got {0}".format(self.chr_sizes))
-        if self.thermostat0 < self.thermostat:
-            self.thermostat0 = self.thermostat
+        if self.colrate0 < self.colrate:
+            self.colrate0 = self.colrate
+        if self.sep is not None and self.sep <= 0:
+            raise ValueError("sep must be positive, or None to turn loop extrusion off")
         if self.lifebooststalled <= 0:
             raise ValueError("lifebooststalled must be positive")
-        if self.blocks_per_updater % self.saveevery != 0:
+        if self.blocks_per_updater is None:
+            if self.extrusion_on:
+                # setup() would precalculate one bond list per block and addBond every unique
+                # pair it ever sees, for the whole phase -- that is what the chunking is for
+                raise ValueError(
+                    "blocks_per_updater=None is only allowed with sep=None; with LEFs the bond "
+                    "updater precalculates one bond list per block, so give it an explicit value"
+                )
+        elif self.blocks_per_updater % self.saveevery != 0:
             raise ValueError("saveevery must divide blocks_per_updater ({0})".format(self.blocks_per_updater))
         if (self.monomer_types is None) != (self.interaction_matrix is None):
             raise ValueError(
@@ -128,8 +159,26 @@ class SimParams:
 
     # --- derived quantities ---------------------------------------------------------
     @property
+    def extrusion_on(self):
+        """False when sep is None -- no translocator, no LEF bonds, no bond updater."""
+        return self.sep is not None
+
+    @property
     def n_lefs(self):
+        if self.sep is None:
+            return 0
         return int(self.npoly // self.sep)
+
+    @property
+    def poly_steps_per_lef_timestep(self):
+        """Polymer steps per LEF timestep; None when extrusion is off.
+
+        A block is poly_steps_per_block polymer steps *and* smc_steps_per_block LEF
+        timesteps, so the conversion between the two clocks is just their ratio.
+        """
+        if not self.extrusion_on:
+            return None
+        return self.poly_steps_per_block / self.smc_steps_per_block
 
     @property
     def chains(self):
@@ -156,10 +205,21 @@ class SimParams:
                 d[key] = d[key].tolist()
         return d
 
+    @staticmethod
+    def _schedule_head(sched):
+        """'N blocks written ...' phrasing, which depends on save_equilibration."""
+        if sched["n_equil_blocks"] == 0:
+            return "{0} blocks written".format(sched["n_written"])
+        if sched["n_written"] == sched["n_blocks"]:  # equilibration is on disk too
+            return "{0} blocks written (the first {1} are equilibration, drop those)".format(
+                sched["n_written"], sched["n_equil_blocks"]
+            )
+        return "{0} blocks written, after {1} equilibration block(s) that are not written".format(
+            sched["n_written"], sched["n_equil_blocks"]
+        )
+
     def summary(self):
         """Human-readable rundown of what this configuration will actually do."""
-        left, right = self.stall_arrays()
-        n_sites = int(((left > 0) | (right > 0)).sum())
         sched = self.schedule()
         lines = [
             "polymer      {0} monomers in {1} chain(s) {2}".format(self.npoly, self.nchr, self.chr_sizes),
@@ -171,17 +231,39 @@ class SimParams:
                 if self.interaction_matrix is None
                 else "heteropolymer_SSW with {0} types".format(len(np.unique(self.monomer_types)))
             ),
-            "LEFs         {0} (1 per {1} monomers), lifetime {2:g}, v={3:g}/step".format(
-                self.n_lefs, self.sep, self.life, self.vlef
-            ),
-            "CTCF         {0} stall site(s), p={1:g} per encounter, lifetime x{2:g} while stalled".format(
-                n_sites, self.stall, self.lifebooststalled
-            ),
-            "schedule     {0} blocks written ({1} of them equilibration, drop those),"
-            " {2} LEF steps each, {3} polymer steps per LEF step".format(
-                sched["n_blocks"], sched["n_equil_blocks"], sched["save_every"], self.polysteps
-            ),
         ]
+        if self.extrusion_on:
+            left, right = self.stall_arrays()
+            n_sites = int(((left > 0) | (right > 0)).sum())
+            lines += [
+                "LEFs         {0} (1 per {1} monomers), lifetime {2:g}, v={3:g}/step".format(
+                    self.n_lefs, self.sep, self.life, self.vlef
+                ),
+                "CTCF         {0} stall site(s), p={1:g} per encounter, lifetime x{2:g} while stalled".format(
+                    n_sites, self.stall, self.lifebooststalled
+                ),
+                "schedule     {0}, {1} polymer steps and {2} LEF steps each"
+                " ({3:g} polymer steps per LEF timestep)".format(
+                    self._schedule_head(sched),
+                    sched["save_every"] * self.poly_steps_per_block,
+                    sched["save_every"] * self.smc_steps_per_block,
+                    self.poly_steps_per_lef_timestep,
+                ),
+            ]
+        else:
+            lines += [
+                "LEFs         none -- loop extrusion is off (sep=None); life/vlef/CTCF are ignored",
+                "schedule     {0}, {1} polymer steps each".format(
+                    self._schedule_head(sched), sched["save_every"] * self.poly_steps_per_block,
+                ),
+            ]
+        lines.append(
+            "chunks       {0} sim rebuild(s) of {1} block(s){2}".format(
+                len(sched["chunks"]),
+                "/".join(str(n) for n, _ in sched["chunks"][:3]) + ("/..." if len(sched["chunks"]) > 3 else ""),
+                "" if self.blocks_per_updater is not None else "  (blocks_per_updater=None)",
+            )
+        )
         return "\n".join(lines)
 
     # --- setup helpers ----------------------------------------------------------------
@@ -202,31 +284,44 @@ class SimParams:
         if restarting:
             skip = 0
             save_every = 10  # a restart wants dense sampling right away
-        elif skip > 0:
+        elif skip > 0 and self.extrusion_on:
             # make sure equilibration is at least one LEF lifetime long
             while save_every * skip * self.smc_steps_per_block <= self.life:
                 skip *= 2
 
-        per_updater = self.blocks_per_updater // save_every
-        if (skip * save_every) % self.blocks_per_updater != 0:
-            raise ValueError("initskip * saveevery must be a multiple of blocks_per_updater")
-        if (self.numsave * save_every) % self.blocks_per_updater != 0:
-            raise ValueError("numsave * saveevery must be a multiple of blocks_per_updater")
-        if self.numsave * save_every * self.smc_steps_per_block <= self.life:
+        if self.extrusion_on and self.numsave * save_every * self.smc_steps_per_block <= self.life:
             raise ValueError("the run is shorter than one LEF lifetime; raise numsave or saveevery")
 
-        updater_skip = save_every * skip // self.blocks_per_updater
-        updater_total = (self.numsave + skip) * save_every // self.blocks_per_updater
+        # the run is split into chunks; each chunk is one Simulation (and one bondUpdater).
+        # The equilibration/production boundary always has to fall on a chunk boundary,
+        # because colrate switches there and it is baked into the integrator at construction.
+        equil_blocks = skip * save_every
+        prod_blocks = self.numsave * save_every
+        if self.blocks_per_updater is None:
+            chunks = [(equil_blocks, False), (prod_blocks, True)]
+            chunks = [c for c in chunks if c[0] > 0]
+        else:
+            bpu = self.blocks_per_updater
+            if equil_blocks % bpu != 0:
+                raise ValueError("initskip * saveevery must be a multiple of blocks_per_updater")
+            if prod_blocks % bpu != 0:
+                raise ValueError("numsave * saveevery must be a multiple of blocks_per_updater")
+            chunks = [(bpu, False)] * (equil_blocks // bpu) + [(bpu, True)] * (prod_blocks // bpu)
+
+        updater_skip = sum(1 for _, do_save in chunks if not do_save)
         return {
             "save_every": save_every,
             "skip_blocks": skip,
+            # (n_blocks_in_chunk, do_save) per Simulation instance
+            "chunks": chunks,
             "updater_skip": updater_skip,
-            "updater_total": updater_total,
-            "saves_per_updater": per_updater,
-            # every block is written to the trajectory, including the equilibration ones
-            # (they just run at thermostat0); n_equil_blocks tells you how many to drop
-            "n_blocks": updater_total * per_updater,
-            "n_equil_blocks": updater_skip * per_updater,
+            "updater_total": len(chunks),
+            # n_blocks counts every block the run produces; n_written counts the ones that
+            # reach the trajectory. They differ by the equilibration blocks unless
+            # save_equilibration is on, in which case the first n_equil_blocks are the ones to drop.
+            "n_blocks": self.numsave + skip,
+            "n_equil_blocks": skip,
+            "n_written": self.numsave + (skip if self.save_equilibration else 0),
             "restarting": restarting,
         }
 
@@ -241,16 +336,23 @@ def make_folder(params, folder=None):
         "npoly{0}".format(params.npoly),
         "nchr{0}".format(params.nchr),
         "dens{0:g}".format(params.density),
-        "life{0:g}".format(params.life),
-        "sep{0:g}".format(params.sep),
-        "vlef{0:g}".format(params.vlef),
-        "dt{0}".format(params.dt),
     ]
-    left, right = params.stall_arrays()
-    if (left > 0).any() or (right > 0).any():
-        bits.append("stallall{0:g}".format(params.stall) if params.stallall else "stallsites{0:g}".format(params.stall))
-        if params.lifebooststalled != 1.0:
-            bits.append("lifeboost{0:g}".format(params.lifebooststalled))
+    if params.extrusion_on:
+        bits += [
+            "life{0:g}".format(params.life),
+            "sep{0:g}".format(params.sep),
+            "vlef{0:g}".format(params.vlef),
+            "dt{0}".format(params.dt),
+        ]
+        left, right = params.stall_arrays()
+        if (left > 0).any() or (right > 0).any():
+            bits.append(
+                "stallall{0:g}".format(params.stall) if params.stallall else "stallsites{0:g}".format(params.stall)
+            )
+            if params.lifebooststalled != 1.0:
+                bits.append("lifeboost{0:g}".format(params.lifebooststalled))
+    else:
+        bits += ["noLEF", "dt{0}".format(params.dt)]
     if params.interaction_matrix is not None:
         bits.append("ntypes{0}".format(len(np.unique(params.monomer_types))))
     if params.pbc:
@@ -316,7 +418,9 @@ def nonbonded_force(params):
         "monomerTypes": types,
         "extraHardParticlesIdxs": [],
         "repulsionEnergy": params.repel,
+        "repulsionRadius": 1.05,  # this is from old code
         "attractionEnergy": params.attraction_energy,
+        "attractionRadius": 2,
     }
 
 
@@ -358,6 +462,9 @@ def build_simulation(params, polymer, reporter, collision_rate):
 
 def make_translocator(params):
     """LEF translocator plus the per-monomer arrays it was built from."""
+    if not params.extrusion_on:
+        raise ValueError("sep is None, so there is no loop extrusion to build a translocator for")
+
     stall_left, stall_right = params.stall_arrays()
     arrays = extrusion.build_lef_arrays(
         params.npoly,
@@ -376,8 +483,11 @@ def run(params, folder=None, verbose=True):
     Writes into ``folder`` (auto-named under ``params.outpath`` if not given):
         blocks_*.h5     polychrom trajectory (read with polychrom.hdf5_format.list_URIs)
         paramsDict.pkl  the SimParams as a dict
-        sites.npz       the per-monomer LEF arrays actually used
-        SMC*.dat        LEF bond lists, if save_smc_bonds
+        sites.npz       the per-monomer LEF arrays actually used (extrusion runs only)
+        SMC*.dat        LEF bond lists, if save_smc_bonds (extrusion runs only)
+
+    With ``params.sep is None`` the translocator and the bond updater are skipped
+    altogether and this is a plain polymer run on the same block schedule.
     """
     sched = params.schedule()
     folder = make_folder(params, folder)
@@ -388,46 +498,52 @@ def run(params, folder=None, verbose=True):
     with open(os.path.join(folder, "paramsDict.pkl"), "wb") as f:
         pickle.dump(params.to_dict(), f)
 
-    smc_tran, lef_arrays = make_translocator(params)
-    np.savez(os.path.join(folder, "sites.npz"), **lef_arrays)
+    bond_updater = None
+    if params.extrusion_on:
+        smc_tran, lef_arrays = make_translocator(params)
+        np.savez(os.path.join(folder, "sites.npz"), **lef_arrays)
 
-    if params.initsteps > 0:
-        if verbose:
-            print("equilibrating LEF dynamics for {0} steps...".format(params.initsteps), flush=True)
-        tstart = time.time()
-        smc_tran.steps(int(params.initsteps))
-        if verbose:
-            print("  done in {0:.1f} s".format(time.time() - tstart))
+        if params.initsteps > 0:
+            if verbose:
+                print("equilibrating LEF dynamics for {0} steps...".format(params.initsteps), flush=True)
+            tstart = time.time()
+            smc_tran.steps(int(params.initsteps))
+            if verbose:
+                print("  done in {0:.1f} s".format(time.time() - tstart))
 
-    bond_updater = smcBondUpdater(smc_tran)
+        bond_updater = smcBondUpdater(smc_tran)
+
     polymer = initial_conformation(params)
     reporter = HDF5Reporter(folder=folder, max_data_length=100, overwrite=True)
 
     kbond_wiggle = params.smc_bond_wiggle
     save_every = sched["save_every"]
+    save_smc_bonds = params.save_smc_bonds and params.extrusion_on
     prev_step = 0
     tot_bonds_added = 0
     lef_steps_taken = 0
     cur_bonds = []
 
     try:
-        for updater_count in range(sched["updater_total"]):
-            do_save = updater_count >= sched["updater_skip"]
+        for updater_count, (chunk_blocks, do_save) in enumerate(sched["chunks"]):
             if verbose:
-                print("updater init {0} / {1}{2}".format(
-                    updater_count, sched["updater_total"], "" if do_save else "  (equilibration)"), flush=True)
+                print("{0} {1} / {2}  ({3} blocks{4})".format(
+                    "updater init" if params.extrusion_on else "sim chunk",
+                    updater_count, sched["updater_total"], chunk_blocks,
+                    "" if do_save else ", equilibration"), flush=True)
 
-            collision_rate = params.thermostat if do_save else params.thermostat0
+            collision_rate = params.colrate if do_save else params.colrate0
             sim = build_simulation(params, polymer, reporter, collision_rate)
 
-            kbond = sim.kbondScalingFactor / (kbond_wiggle ** 2)
-            bond_dist = params.smc_bond_dist * sim.length_scale
-            bond_updater.setParams({"length": bond_dist, "k": kbond}, {"length": bond_dist, "k": 0})
-            cur_bonds, _ = bond_updater.setup(
-                bondForce=sim.force_dict["harmonic_bonds"],
-                blocks=params.blocks_per_updater,
-                smcStepsPerBlock=params.smc_steps_per_block,
-            )
+            if bond_updater is not None:
+                kbond = sim.kbondScalingFactor / (kbond_wiggle ** 2)
+                bond_dist = params.smc_bond_dist * sim.length_scale
+                bond_updater.setParams({"length": bond_dist, "k": kbond}, {"length": bond_dist, "k": 0})
+                cur_bonds, _ = bond_updater.setup(
+                    bondForce=sim.force_dict["harmonic_bonds"],
+                    blocks=chunk_blocks,
+                    smcStepsPerBlock=params.smc_steps_per_block,
+                )
 
             if updater_count in (0, sched["updater_skip"]):
                 sim.local_energy_minimization()
@@ -435,10 +551,12 @@ def run(params, folder=None, verbose=True):
                 sim._apply_forces()
 
             sim.step = prev_step
-            for i in range(params.blocks_per_updater):
+            for i in range(chunk_blocks):
                 if i % save_every == (save_every - 1):
-                    sim.do_block(steps=params.polysteps)
-                    if params.save_smc_bonds and (i % (10 * save_every) == (10 * save_every - 1)):
+                    # equilibration blocks are still integrated, logged and checked for blow-ups;
+                    # save=False only skips handing them to the reporter
+                    sim.do_block(steps=params.poly_steps_per_block, save=do_save or params.save_equilibration)
+                    if save_smc_bonds and (i % (10 * save_every) == (10 * save_every - 1)):
                         with open(os.path.join(folder, "SMC{0}.dat".format(sim.step)), "wb") as f:
                             pickle.dump(cur_bonds, f)
                         with open(os.path.join(folder, "bondsAdded.txt"), "a") as f:
@@ -447,9 +565,9 @@ def run(params, folder=None, verbose=True):
                         lef_steps_taken = 0
                 else:
                     # skip the GPU->host copy for blocks we are not saving
-                    sim.integrator.step(params.polysteps)
-                    sim.step += params.polysteps
-                if i < params.blocks_per_updater - 1:
+                    sim.integrator.step(params.poly_steps_per_block)
+                    sim.step += params.poly_steps_per_block
+                if bond_updater is not None and i < chunk_blocks - 1:
                     cur_bonds, _, n_added = bond_updater.step(sim.context, countSteps=True)
                     tot_bonds_added += n_added
                     lef_steps_taken += 1
