@@ -18,16 +18,17 @@ You will find all the code you need to follow the bootcamp in the `tutorial` dir
     * tqdm 4.70.0
     * ipykernel 7.2.0
     * py3Dmol 2.5.5
+    * noctiluca 0.1.4
  
   put analysis softwares somewhere else
 
-If you are using a lab computer, you can do this by cloning James' conda environment exactly using the commands below. This will be much faster than creating an environment from scratch, but it might not work on other operating systems.
+If you are using a lab computer, you can do this by cloning James' conda environment as shown below. This will be much faster than creating an environment from scratch because it avoids using the conda solver, but it might not work on other operating systems. The conda packages are listed in `polysim_environment_explicit.txt`, and a few packages must be installed using pip afterwards.
 ```bash
-$ conda create -n polysim -c conda-forge --file /mnt/md0/jjusuf/environments/polysim3_exact_2026aug.txt
+$ conda create -n polysim -c conda-forge --file polysim_environment_explicit.txt
 
 $ conda activate polysim
 
-$ pip install "polychrom @ git+https://github.com/open2c/polychrom.git@4c9e3f8"
+$ pip install tqdm==4.70.0 matplotlib==3.11.1 ipykernel==7.2.0 py3Dmol==2.5.5 noctiluca==0.1.4 "polychrom @ git+https://github.com/open2c/polychrom.git@4c9e3f8"
 
 $ pip install -e /mnt/md0/jjusuf/polysim/polysim_bootcamp
 ```

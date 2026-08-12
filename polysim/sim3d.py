@@ -23,7 +23,7 @@ polychrom's ``heteropolymer_SSW`` if you want type-specific interactions at all;
 both as None (the default) for a plain homopolymer with soft repulsion.
 
 Set ``sep=None`` to turn loop extrusion off entirely and run pure polymer dynamics --
-no translocator, no LEF bonds, no ``sites.npz``/``SMC*.dat``. The block schedule is
+no translocator, no LEF bonds, no ``sites.npz`` and no ``SMCs`` in the h5. The block schedule is
 untouched, so a ``sep=None`` run samples on exactly the same cadence as the extrusion
 run you want to compare it against. Pair it with ``blocks_per_updater=None`` to run each
 phase as a single Simulation: the chunking only exists to bound what the bond updater
@@ -81,11 +81,14 @@ class SimParams:
     sep: Optional[float] = 480  # "separation", defined as # of monomers per LEF -> n_lefs = npoly // sep
                                 # None -> no LEFs at all (pure polymer dynamics)
     vlef: float = 0.0025  # 1-sided extrusion motor velocity of LEF, in monomers per timestep
-    stall: float = 0.6  # probability that a CTCF site will stall a passing LEF
+    stall: Optional[float] = 0.6  # probability that a CTCF site will stall a passing LEF
+                                  # None -> every site must carry its own probability (dict form below)
     stallall: bool = False  # stall everywhere (ignores the site lists)
     lifebooststalled: float = 4.0  # LEF lifetime multiplier while both sides are stalled CTCFs
     ctcf_left: Optional[Sequence[int]] = None  # array of monomers that are able to block the left-moving LEF leg (i.e., "RIGHT-facing" motifs)
     ctcf_right: Optional[Sequence[int]] = None  # array of monomers that are able to block the right-moving LEF leg (i.e., "LEFT-facing" motifs)
+                                               # either list: every site stalls with probability `stall`
+                                               # or dict {monomer index: probability}: per-site stall probabilities, and `stall` is unused
     smc_bond_wiggle: float = 0.2
     smc_bond_dist: float = 0.5
 
@@ -115,12 +118,16 @@ class SimParams:
     outpath: str = str(OUTPUTS)  # polysim.OUTPUTS -- deliberately outside the repository
     flag: str = ""  # label appended to the output folder name
     restart_file: str = ""  # path to a pickled conformation to restart from
-    save_smc_bonds: bool = True  # dump SMC*.dat + bondsAdded.txt alongside the trajectory
+    save_smc_bonds: bool = True  # store LEF positions under "SMCs" in each saved h5 block, + bondsAdded.txt
     save_equilibration: bool = False  # also write the initskip equilibration blocks. Off by default
                                       # so that every block on disk is production: nothing to drop,
                                       # and no need to know the resolved initskip at analysis time.
                                       # They are still integrated and still logged (Rg, energies,
                                       # blow-up checks) -- only the reporter call is skipped.
+    max_data_length: int = 100  # blocks the reporter buffers in memory before flushing them to one
+                                # blocks_*.h5; larger = fewer, bigger files (and more memory held).
+                                # A block is npoly*3 float32 of coordinates, so ~0.8 MB each at
+                                # npoly=70000: 100 blocks is ~80 MB buffered per flush.
 
     def __post_init__(self):
         if self.chr_sizes is None:
@@ -141,6 +148,8 @@ class SimParams:
             raise ValueError("sep must be positive, or None to turn loop extrusion off")
         if self.lifebooststalled <= 0:
             raise ValueError("lifebooststalled must be positive")
+        if self.max_data_length < 1:
+            raise ValueError("max_data_length must be at least 1 block")
         if self.blocks_per_updater is None:
             if self.extrusion_on:
                 # setup() would precalculate one bond list per block and addBond every unique
@@ -156,6 +165,8 @@ class SimParams:
                 "monomer_types and interaction_matrix must be given together "
                 "(leave both None for a homopolymer)"
             )
+        if self.extrusion_on:
+            self.stall_arrays()  # fail here, not several minutes into a run
 
     # --- derived quantities ---------------------------------------------------------
     @property
@@ -239,8 +250,8 @@ class SimParams:
                 "LEFs         {0} (1 per {1} monomers), lifetime {2:g}, v={3:g}/step".format(
                     self.n_lefs, self.sep, self.life, self.vlef
                 ),
-                "CTCF         {0} stall site(s), p={1:g} per encounter, lifetime x{2:g} while stalled".format(
-                    n_sites, self.stall, self.lifebooststalled
+                "CTCF         {0} stall site(s), p={1} per encounter, lifetime x{2:g} while stalled".format(
+                    n_sites, extrusion.stall_prob_label(left, right), self.lifebooststalled
                 ),
                 "schedule     {0}, {1} polymer steps and {2} LEF steps each"
                 " ({3:g} polymer steps per LEF timestep)".format(
@@ -345,9 +356,10 @@ def make_folder(params, folder=None):
             "dt{0}".format(params.dt),
         ]
         left, right = params.stall_arrays()
-        if (left > 0).any() or (right > 0).any():
+        label = extrusion.stall_prob_label(left, right)
+        if label is not None:
             bits.append(
-                "stallall{0:g}".format(params.stall) if params.stallall else "stallsites{0:g}".format(params.stall)
+                "stallall{0}".format(label) if params.stallall else "stallsites{0}".format(label)
             )
             if params.lifebooststalled != 1.0:
                 bits.append("lifeboost{0:g}".format(params.lifebooststalled))
@@ -481,10 +493,12 @@ def run(params, folder=None, verbose=True):
     """Run the simulation. Returns the output folder.
 
     Writes into ``folder`` (auto-named under ``params.outpath`` if not given):
-        blocks_*.h5     polychrom trajectory (read with polychrom.hdf5_format.list_URIs)
+        blocks_*.h5     polychrom trajectory (read with polychrom.hdf5_format.list_URIs);
+                        each saved block also carries an "SMCs" (n_lefs, 2) array of LEF
+                        leg positions, if save_smc_bonds (extrusion runs only)
         paramsDict.pkl  the SimParams as a dict
         sites.npz       the per-monomer LEF arrays actually used (extrusion runs only)
-        SMC*.dat        LEF bond lists, if save_smc_bonds (extrusion runs only)
+        bondsAdded.txt  LEF steps taken / new bonds added, if save_smc_bonds
 
     With ``params.sep is None`` the translocator and the bond updater are skipped
     altogether and this is a plain polymer run on the same block schedule.
@@ -514,7 +528,7 @@ def run(params, folder=None, verbose=True):
         bond_updater = smcBondUpdater(smc_tran)
 
     polymer = initial_conformation(params)
-    reporter = HDF5Reporter(folder=folder, max_data_length=100, overwrite=True)
+    reporter = HDF5Reporter(folder=folder, max_data_length=params.max_data_length, overwrite=True)
 
     kbond_wiggle = params.smc_bond_wiggle
     save_every = sched["save_every"]
@@ -555,10 +569,15 @@ def run(params, folder=None, verbose=True):
                 if i % save_every == (save_every - 1):
                     # equilibration blocks are still integrated, logged and checked for blow-ups;
                     # save=False only skips handing them to the reporter
-                    sim.do_block(steps=params.poly_steps_per_block, save=do_save or params.save_equilibration)
+                    # cur_bonds is the LEF bond list currently applied to the context, so it goes
+                    # into the same h5 block as the conformation it acted on, under "SMCs"
+                    extras = {"SMCs": np.array(cur_bonds, dtype=np.int32)} if save_smc_bonds else {}
+                    sim.do_block(
+                        steps=params.poly_steps_per_block,
+                        save=do_save or params.save_equilibration,
+                        save_extras=extras,
+                    )
                     if save_smc_bonds and (i % (10 * save_every) == (10 * save_every - 1)):
-                        with open(os.path.join(folder, "SMC{0}.dat".format(sim.step)), "wb") as f:
-                            pickle.dump(cur_bonds, f)
                         with open(os.path.join(folder, "bondsAdded.txt"), "a") as f:
                             f.write("{0} {1}\n".format(lef_steps_taken, tot_bonds_added))
                         tot_bonds_added = 0

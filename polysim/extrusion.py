@@ -51,11 +51,23 @@ def tile_sites(base_sites, period, length, start=0):
     return sorted(int(s) for s in sites if 0 <= s < length)
 
 
+def tile_site_probs(site_probs, period, length, start=0):
+    """Like extrusion.tile_sites, but carries a per-site probability."""
+    out = {}
+    for offset in range(start, length, period):
+        for site, p in site_probs.items():
+            idx = offset + site
+            if 0 <= idx < length:
+                out[idx] = float(p)
+    return out
+
+
 def sites_to_array(length, sites, prob):
     """Per-monomer probability array from a list of indices, or a {index: prob} dict.
 
     ``sites`` may be None (all zeros), a sequence of monomer indices (each gets ``prob``),
-    or a dict mapping monomer index -> its own probability.
+    or a dict mapping monomer index -> its own probability. ``prob`` is only read for the
+    sequence form, so it may be None whenever every site carries its own probability.
     """
     arr = np.zeros(length, dtype=np.double)
     if sites is None:
@@ -64,6 +76,12 @@ def sites_to_array(length, sites, prob):
     if isinstance(sites, dict):
         pairs = [(int(k), float(v)) for k, v in sites.items()]
     else:
+        if prob is None:
+            raise ValueError(
+                "stall probability is None but the CTCF sites were given as a plain list, "
+                "which has no per-site probabilities; either set stall to a number or pass "
+                "the sites as a {monomer index: probability} dict"
+            )
         pairs = [(int(s), float(prob)) for s in np.asarray(sites, dtype=int).ravel()]
 
     for site, p in pairs:
@@ -75,7 +93,7 @@ def sites_to_array(length, sites, prob):
     return arr
 
 
-def build_stall_arrays(length, ctcf_left=None, ctcf_right=None, stall_prob=0.8, stall_all=False):
+def build_stall_arrays(length, ctcf_left=None, ctcf_right=None, stall_prob=None, stall_all=False):
     """CTCF stall probabilities for the two LEF legs.
 
     Parameters
@@ -86,12 +104,16 @@ def build_stall_arrays(length, ctcf_left=None, ctcf_right=None, stall_prob=0.8, 
         ``stallLeft`` is read at the left (leftward-moving) leg's position and
         ``stallRight`` at the right (rightward-moving) leg's. So to hold a loop between
         monomers a < b, put ``a`` in ``ctcf_left`` and ``b`` in ``ctcf_right``.
-    stall_prob : float
-        Probability applied at each site given as a plain index (ignored for dict input).
+    stall_prob : float or None
+        Probability applied at each site given as a plain index. It is ignored for dict
+        input, so pass None when both site lists are dicts of per-site probabilities.
     stall_all : bool
-        Stall everywhere at ``stall_prob``; overrides the site lists.
+        Stall everywhere at ``stall_prob``; overrides the site lists, and so needs
+        ``stall_prob`` to be a number.
     """
     if stall_all:
+        if stall_prob is None:
+            raise ValueError("stall_all=True stalls every monomer at stall_prob, which cannot be None")
         left = np.full(length, float(stall_prob), dtype=np.double)
         right = np.full(length, float(stall_prob), dtype=np.double)
         return left, right
@@ -99,6 +121,21 @@ def build_stall_arrays(length, ctcf_left=None, ctcf_right=None, stall_prob=0.8, 
     left = sites_to_array(length, ctcf_left, stall_prob)
     right = sites_to_array(length, ctcf_right, stall_prob)
     return left, right
+
+
+def stall_prob_label(stall_left, stall_right):
+    """Short description of the stall probabilities in use, for summaries and folder names.
+
+    ``'0.8'`` when every stall site shares one probability, ``'0.05-1'`` when they differ,
+    and None when there are no stall sites at all.
+    """
+    values = np.concatenate([stall_left[stall_left > 0.0], stall_right[stall_right > 0.0]])
+    if values.size == 0:
+        return None
+    lo, hi = float(values.min()), float(values.max())
+    if lo == hi:
+        return "{0:g}".format(lo)
+    return "{0:g}-{1:g}".format(lo, hi)
 
 
 def build_lef_arrays(
