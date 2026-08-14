@@ -57,7 +57,7 @@ params = SimParams(
     integrator="langevin",
     dt=40,
     colrate=0.01, colrate0=0.01,
-    poly_steps_per_block=40,  # polymer timesteps per block; aim for ~20 ms
+    poly_steps_per_block=33,  # polymer timesteps per block; aim for ~20 ms
 
     # --- schedule ---
     numsave=360000,        # total number of save-blocks (100 hours)
