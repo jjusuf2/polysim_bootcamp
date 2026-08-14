@@ -7,20 +7,18 @@ This repository also serves as a consolidated resource for polymer simulation co
 ## Getting started
 
 You will find all the code you need to follow the bootcamp in the `tutorial` directory. Please make a conda environment with the following packages (with recommended version numbers):
-* Essential for simulations
+* Essential for running simulations
     * python 3.12.2
     * numpy 1.26.4
     * openmm 8.1.1
     * polychrom 0.1.1
     * cudatoolkit 11.8.0
-* Other packages used in tutorial
+* Other packages for analyses in this tutorial
     * matplotlib 3.11.1
     * tqdm 4.70.0
     * ipykernel 7.2.0
     * py3Dmol 2.5.5
     * noctiluca 0.1.4
- 
-  put analysis softwares somewhere else
 
 If you are using a lab computer, you can do this by cloning James' conda environment as shown below. This will be much faster than creating an environment from scratch because it avoids using the conda solver, but it might not work on other operating systems. The conda packages are listed in `polysim_environment_explicit.txt`, and a few packages must be installed using pip afterwards.
 ```bash
@@ -28,7 +26,7 @@ $ conda create -n polysim -c conda-forge --file polysim_environment_explicit.txt
 
 $ conda activate polysim
 
-$ pip install tqdm==4.70.0 matplotlib==3.11.1 ipykernel==7.2.0 py3Dmol==2.5.5 noctiluca==0.1.4 "polychrom @ git+https://github.com/open2c/polychrom.git@4c9e3f8"
+$ pip install py3Dmol==2.5.5 noctiluca==0.1.4 "polychrom @ git+https://github.com/open2c/polychrom.git@4c9e3f8"
 
 $ pip install -e /mnt/md0/jjusuf/polysim/polysim_bootcamp
 ```
