@@ -25,9 +25,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# This file is from polychrom (https://github.com/open2c/polychrom), with local
-# bug fixes -- notably the stall coin is flipped once per arrival at a site rather
-# than once per timestep, so `stall` is a genuine per-encounter probability.
+# This file is almost exactly the same as the version in the polychrom package Loop Extrusion example
+# (https://github.com/open2c/polychrom/blob/master/examples/loopExtrusion/LEF_Dynamics.pyx)
+# but has been updated for Python 3, and a bug was fixed:
+#    The stall coin flipp occurs once per arrival at a stall site rather than once per timestep,
+#    so `stall` is a genuine per-encounter probability.
 
 import numpy as np
 
