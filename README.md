@@ -4,9 +4,9 @@ Welcome to James' **Hansen Lab Polymer Simulation Bootcamp**! This repository co
 
 This repository also serves as a consolidated resource for polymer simulation code as it is used by the Hansen Lab. Here we introduce the `polysim` package, which re-implements the key elements of many standalone simulation scripts from lab projects from 2021-2026 with an emphasis on user-friendliness and code readability. The `polysim` package therefore serves as a great starting point for your next polymer simulation project. For more details on how our code relates to existing scripts and packages, see the Provenance section below.
 
-## Getting started
+## Setup
 
-You will find all the code you need to follow the bootcamp in the `tutorial` directory. Please make a conda environment with the following packages (with recommended version numbers):
+To get started, make a conda environment with the following packages (with recommended version numbers):
 * Essential for running simulations
     * python 3.12.2
     * numpy 1.26.4
@@ -27,8 +27,16 @@ $ conda create -n polysim -c conda-forge --file polysim_environment_explicit.txt
 $ conda activate polysim
 
 $ pip install py3Dmol==2.5.5 noctiluca==0.1.4 "polychrom @ git+https://github.com/open2c/polychrom.git@4c9e3f8"
+```
 
-$ pip install -e /mnt/md0/jjusuf/polysim/polysim_bootcamp
+Now clone the repository and install the `polysim` package:
+
+```
+$ cd /mnt/md0/<username>/...  # choose an appropriate location
+
+$ git clone https://github.com/jjusuf2/polysim_bootcamp
+
+$ pip install -e polysim_bootcamp
 ```
 
 The code here is designed to be run on the Hansen Lab computers' GPU's, which as of August 2026 are:
@@ -36,22 +44,43 @@ The code here is designed to be run on the Hansen Lab computers' GPU's, which as
 * florence: NVIDIA RTX 2080, CUDA 13.0
 * katherine/joan: NVIDIA RTX 6000, CUDA 13.2
 
-## 3D simulations
+## Tutorial
 
-Open `main_example/run_sim3D.ipynb`. It walks through polymer geometry, CTCF sites,
-optional monomer types, and the run itself. The code behind it:
+You will find all the code you need to follow the bootcamp in the `tutorial` directory.
 
-| file | role |
-| --- | --- |
-| `extrusion.py` | CTCF stall arrays and the 1D LEF translocator; no OpenMM needed |
-| `sim3D.py` | importable module: `SimParams`, polymer/force setup, run loop |
-| `smcBondUpdater.py` | pushes LEF positions into OpenMM harmonic bonds |
+First, we simulate a polymer.
+* `run_simulation_walkthru.ipynb`
+* `run_sim1D.py`
+* `run_sim3D.py`
 
-`sim3D.py` no longer models compartments and no longer parses a command line or a
+Then, analyze the polymer:
+
+* `basic_analysis.ipynb`
+* `microc.ipynb`
+* `calibration.ipynb`
+* `visualization.ipynb`
+
 
 ## Provenance
 
-`main_example` contains code to perform 1D and 3D polymer simulations. It is primarily based on the polychrom example, with a few recent bug fixes, but with the organizational structure of Ed's code.
+Lots of different simulation code has been written over the years, and each version contains unique features for the specific biological process of interest. Here, we provide the `polysim` package: a revised, simplified codebase to run 3D polymer simulations on `polychrom` with two key features:
+* sticky sites, to model _cis_-regulatory elements or compartments
+* CTCF/cohesin-mediated loop extrusion using a coupled 1D simulation.
 
-`LEF_Dynamics.pyx` is directly from polychrom, with bug fixes
-`simUtils.py`, `smcBondUpdater.py`, and `tools.py` contain helper functions from Ed's microcompartment code
+Below we describe how each script in the package relates to existing code:
+
+* Back-end
+
+  * `LEF_dynamics.pyx` implements the 1D simulations of cohesin motion. Is almost identical to the script of the same name in `polychrom`'s [loop extrusion example](https://github.com/open2c/polychrom/tree/master/examples/loopExtrusion), but with some bug fixes (see comments in script for more details). A [similar script](https://github.com/mirnylab/microcompartments/tree/main/m-to-g1) was used in the simulation code from Goel et al. 2026, and a [distantly related version](https://github.com/ahansenlab/DNA_break_synapsis_models/blob/master/DSB_smcTranslocator_v2.pyx) was written to model DSBs in Yang et al. 2023 and was used verbatim in Jusuf et al. 2026 and Ramanathan et al. 2026.
+
+  * `bond_updater.py` defines the `smcBondUpdater` class which takes the results of the 1D simulation (LEF positions) and implements them in the 3D simulation. It is a simplified version of [this script](https://github.com/mirnylab/microcompartments/blob/main/m-to-g1/smcBondUpdater.py) from Goel et al. 2026, which in turn was adapted from a `polychrom` example.
+
+* Front-end (importable modules)
+
+  * `extrusion.py` contains key functions to set up and run a stand-alone 1D simulation of cohesin motion.
+
+  * `sim3D.py` contains key functions to set up and run the full 3D simulation, which can include a coupled 1D simulation.
+
+  These two scripts essentially modularize the [main simulation script](https://github.com/mirnylab/microcompartments/blob/main/m-to-g1/m-to-g1_transition.py) from Goel et al. 2026 into functions that can be adapted to model different loci.
+
+We especially acknowledge E. J. Banigan, J. H. Yang, H. B. Brandão, and M. Imakaev for their substantial contributions to previous simulation code that has evolved into the version presented here.
