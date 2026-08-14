@@ -20,7 +20,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# The following was adapated from a loop extrusion example in polychrom
+# The following was adapated from Goel et al. 2026 simulation code
+# (https://github.com/mirnylab/microcompartments/blob/main/m-to-g1/smcBondUpdater.py),
+# which in turn was adapted from a loop extrusion example in polychrom
 
 
 import numpy as np

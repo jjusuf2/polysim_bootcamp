@@ -447,7 +447,7 @@ def build_simulation(params, polymer, reporter, collision_rate):
         max_Ek=params.max_ek,
         N=params.npoly,
         PBCbox=params.pbc_box,
-        save_decimals=3,
+        save_decimals=2,
         reporters=[reporter],
     )
     sim.set_data(polymer, center=True)
