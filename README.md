@@ -20,41 +20,46 @@ To get started, make a conda environment with the following packages (with recom
     * py3Dmol 2.5.5
     * noctiluca 0.1.4
 
-If you are using a lab computer, you can do this by cloning James' conda environment as shown below. This will be much faster than creating an environment from scratch because it avoids using the conda solver, but it might not work on other operating systems. The conda packages are listed in `polysim_environment_explicit.txt`, and a few packages must be installed using pip afterwards.
+These versions are appropriate for running the simulation code on the Hansen Lab computers' GPU's, which as of August 2026 are:
+* rosalind: NVIDIA RTX 4500, CUDA 12.9
+* florence: NVIDIA RTX 2080, CUDA 13.0
+* katherine/joan: NVIDIA RTX 6000, CUDA 13.2
+
+**Quick-start:** If you are using a lab computer, just run the commands below.
+
+**1.** Clone this repository
+
+```
+$ cd /mnt/md0/<username>/...  # choose an appropriate location
+
+$ git clone https://github.com/jjusuf2/polysim_bootcamp
+```
+
+**2.** Create an environment with the necessary packages (conda packages are listed in `polysim_environment_explicit.txt`)
+
+
 ```bash
-$ conda create -n polysim -c conda-forge --file polysim_environment_explicit.txt
+$ conda create -n polysim -c conda-forge --file polysim_bootcamp/polysim_environment_explicit.txt
 
 $ conda activate polysim
 
 $ pip install py3Dmol==2.5.5 noctiluca==0.1.4 "polychrom @ git+https://github.com/open2c/polychrom.git@4c9e3f8"
 ```
 
-Now clone the repository and install the `polysim` package:
-
+**3.** Install the `polysim` package 
 ```
-$ cd /mnt/md0/<username>/...  # choose an appropriate location
-
-$ git clone https://github.com/jjusuf2/polysim_bootcamp
-
 $ pip install -e polysim_bootcamp
 ```
-
-The code here is designed to be run on the Hansen Lab computers' GPU's, which as of August 2026 are:
-* rosalind: NVIDIA RTX 4500, CUDA 12.9
-* florence: NVIDIA RTX 2080, CUDA 13.0
-* katherine/joan: NVIDIA RTX 6000, CUDA 13.2
 
 ## Tutorial
 
 You will find all the code you need to follow the bootcamp in the `tutorial` directory.
 
-First, we simulate a polymer.
-* `run_simulation_walkthru.ipynb`
-* `run_sim1D.py`
-* `run_sim3D.py`
+To run a simulation:
+* `sim3D_complete.py`
+* `sim3D_naked_chain_for_calibration.py`
 
-Then, analyze the polymer:
-
+To analyze the results:
 * `basic_analysis.ipynb`
 * `microc.ipynb`
 * `calibration.ipynb`

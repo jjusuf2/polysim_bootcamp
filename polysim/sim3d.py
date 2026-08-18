@@ -106,7 +106,7 @@ class SimParams:
     # with extrusion on, smc_steps_per_block LEF timesteps. Every saveevery-th one is written.
     numsave: int = 5000000  # blocks written to the trajectory
     saveevery: int = 500  # blocks between saves; must divide blocks_per_updater
-    initskip: int = 300  # blocks of equilibration
+    initskip: int = 0  # blocks of equilibration
     initsteps: int = 2000000  # LEF-only steps before the polymer starts
     blocks_per_updater: Optional[int] = 1000  # rebuild the sim (and the bondUpdater) this often;
                                               # None -> one chunk per phase, i.e. as few rebuilds as
