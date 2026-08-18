@@ -97,8 +97,7 @@ class SimParams:
     gpu: str = "0"  # the two GPU's in each computer are called "0" and "1"; use nvidia-smi to check usage
     integrator: str = "langevin"
     dt: int = 40  # timestep, fs
-    colrate: float = 0.01   # collision rate during production
-    colrate0: float = 0.01  # collision rate during equilibration (>= colrate)
+    colrate: float = 0.01   # collision rate
     poly_steps_per_block: int = 450  # polymer timesteps per block
     max_ek: float = 20.0
 
@@ -107,7 +106,7 @@ class SimParams:
     # with extrusion on, smc_steps_per_block LEF timesteps. Every saveevery-th one is written.
     numsave: int = 5000000  # blocks written to the trajectory
     saveevery: int = 500  # blocks between saves; must divide blocks_per_updater
-    initskip: int = 300  # blocks of equilibration, run at colrate0 and (by default) not written
+    initskip: int = 300  # blocks of equilibration
     initsteps: int = 2000000  # LEF-only steps before the polymer starts
     blocks_per_updater: Optional[int] = 1000  # rebuild the sim (and the bondUpdater) this often;
                                               # None -> one chunk per phase, i.e. as few rebuilds as
@@ -142,8 +141,6 @@ class SimParams:
 
         if min(self.chr_sizes) < 2:
             raise ValueError("every chain needs at least 2 monomers, got {0}".format(self.chr_sizes))
-        if self.colrate0 < self.colrate:
-            self.colrate0 = self.colrate
         if self.sep is not None and self.sep <= 0:
             raise ValueError("sep must be positive, or None to turn loop extrusion off")
         if self.lifebooststalled <= 0:
@@ -335,6 +332,34 @@ class SimParams:
             "n_written": self.numsave + (skip if self.save_equilibration else 0),
             "restarting": restarting,
         }
+
+
+def tile_sites(base_sites, period, length, start=0):
+    """Repeat a base pattern of monomer indices every ``period`` monomers along the chain.
+
+    Replaces the old ``ctcf.dat`` file format. ``base_sites`` are offsets within one
+    repeat unit; the returned list is every resulting index that falls in [0, length).
+
+        >>> tile_sites([10, 50], period=1000, length=3000)
+        [10, 50, 1010, 1050, 2010, 2050]
+    """
+    base_sites = np.asarray(base_sites, dtype=int)
+    if period <= 0:
+        raise ValueError("period must be positive")
+    offsets = np.arange(start, length, period)
+    sites = (offsets[:, None] + base_sites[None, :]).ravel()
+    return sorted(int(s) for s in sites if 0 <= s < length)
+
+
+def tile_site_probs(site_probs, period, length, start=0):
+    """Like extrusion.tile_sites, but carries a per-site probability."""
+    out = {}
+    for offset in range(start, length, period):
+        for site, p in site_probs.items():
+            idx = offset + site
+            if 0 <= idx < length:
+                out[idx] = float(p)
+    return out
 
 
 def make_folder(params, folder=None):
@@ -546,7 +571,7 @@ def run(params, folder=None, verbose=True):
                     updater_count, sched["updater_total"], chunk_blocks,
                     "" if do_save else ", equilibration"), flush=True)
 
-            collision_rate = params.colrate if do_save else params.colrate0
+            collision_rate = params.colrate
             sim = build_simulation(params, polymer, reporter, collision_rate)
 
             if bond_updater is not None:

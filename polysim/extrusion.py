@@ -31,35 +31,7 @@ if _HERE not in sys.path:
 import pyximport
 
 pyximport.install(setup_args={"include_dirs": np.get_include()})
-from LEF_Dynamics import LEFTranslocatorDirectional  # noqa: E402
-
-
-def tile_sites(base_sites, period, length, start=0):
-    """Repeat a base pattern of monomer indices every ``period`` monomers along the chain.
-
-    Replaces the old ``ctcf.dat`` file format. ``base_sites`` are offsets within one
-    repeat unit; the returned list is every resulting index that falls in [0, length).
-
-        >>> tile_sites([10, 50], period=1000, length=3000)
-        [10, 50, 1010, 1050, 2010, 2050]
-    """
-    base_sites = np.asarray(base_sites, dtype=int)
-    if period <= 0:
-        raise ValueError("period must be positive")
-    offsets = np.arange(start, length, period)
-    sites = (offsets[:, None] + base_sites[None, :]).ravel()
-    return sorted(int(s) for s in sites if 0 <= s < length)
-
-
-def tile_site_probs(site_probs, period, length, start=0):
-    """Like extrusion.tile_sites, but carries a per-site probability."""
-    out = {}
-    for offset in range(start, length, period):
-        for site, p in site_probs.items():
-            idx = offset + site
-            if 0 <= idx < length:
-                out[idx] = float(p)
-    return out
+from LEF_Dynamics import LEFTranslocatorDirectional
 
 
 def sites_to_array(length, sites, prob):
