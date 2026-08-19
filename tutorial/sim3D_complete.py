@@ -1,11 +1,14 @@
-# This Python script runs a 3D polymer simulation with loop extrusion and sticky sites
+# This Python script runs a 3D polymer simulation of James' fictitious region from Jusuf et al. 2026,
+# which has CTCF sites/loop extrusion and sticky monomers
+
+# Note: some parameters differ slightly from the original version published with the paper
 
 import os, sys
 import numpy as np
 
 from polysim import sim3d
 
-outpath = '.'  # the folder in which to write outputs (make sure there is at least a few hundreds of GB free!)
+outpath = '<path>/<to>/<your>/<folder>'  # the folder in which to write outputs (make sure there is at least a few hundreds of GB free!)
 
 
 ## Enter basic chromosome design parameters ##
@@ -73,7 +76,6 @@ params = sim3d.SimParams(
                 # will save far less often anyway.
                 # changing this drastically may affect numerical stability (40 is a good value)
     colrate = 0.01,   # collision rate (0.01 is a good value)
-    colrate0 = 0.01,  # collision rate during the initialization stage (can just set equal to colrate)
     poly_steps_per_block = 33,  # a "block" is defined as this many polymer timesteps;
                                 # the "block" serves as the most fundamental timestep
                                 # for loop extrusion and saving.
@@ -88,14 +90,16 @@ params = sim3d.SimParams(
     lifebooststalled = 4,    # CTCF lifetime gets multiplied by this number when both sides are stalled
 
     # --- SCHEDULE ---
-    initsteps = 540000,         # LEF-only blocks before the polymer starts moving
+    initsteps = 540000,         # LEF-only blocks before the polymer starts moving, to equilibrate LEF dynamics
+                                # typically want this to be at least a few LEF lifetimes
     saveevery = 50,             # number of blocks between saves; must divide blocks_per_updater, whose default value is 1000
     numsave = 360000,           # total number of saved blocks for which to run the simulation
-    blocks_per_updater = 1000,  # number of blocks between restarting the smcBondUpdater
+    blocks_per_updater = 1000,  # number of blocks between restarting the smcBondUpdater (no need to change)
 
     # --- output ---
-    outpath=outpath,
-    flag="",             # label appended to the auto-generated folder name
+    max_data_length = 100,  # how many blocks to write to each output file (reduce it if you want to see your output faster)
+    outpath = outpath,      # this was set earlier
+    flag = "",              # label appended to the auto-generated folder name
 )
 
 print(params.summary())
